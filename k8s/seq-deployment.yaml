@@ -30,7 +30,10 @@ spec:
               value: "admin"
 
             - name: SEQ_FIRSTRUN_ADMINPASSWORD
-              value: "123456"
+              valueFrom:
+                secretKeyRef:
+                  name: seq-secret
+                  key: SEQ_ADMIN_PASSWORD
 
           ports:
             - name: http
