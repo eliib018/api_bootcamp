@@ -8,7 +8,7 @@ using Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
-namespace ApiBootcamp.Controllers;
+namespace Api.Controllers;
 
 [ApiController]
 [Route("api/v1/cuentas")]

@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using FluentValidation;
 
-namespace ApiBootcamp.Middleware;
+namespace Api.Middleware;
 
 public class ValidationExceptionMiddleware
 {

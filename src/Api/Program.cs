@@ -1,4 +1,4 @@
-using ApiBootcamp.Middleware;
+using Api.Middleware;
 using Application;
 using Infrastructure;
 using Infrastructure.Persistence;
