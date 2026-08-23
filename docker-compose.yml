@@ -6,13 +6,11 @@ services:
     environment:
       POSTGRES_DB: api_bootcamp
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "5433:5432"
-
     volumes:
       - api_bootcamp_postgres_data:/var/lib/postgresql
-
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d api_bootcamp"]
       interval: 5s
@@ -26,11 +24,11 @@ services:
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
     ports:
       - "5341:80"
     volumes:
       - api_bootcamp_seq_data:/data
-
 
   api-bootcamp-api:
     build:
@@ -42,7 +40,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: 8080
       APPLICATION_NAME: ApiBootcamp
-      ConnectionStrings__PostgreSQL: "Host=postgres;Port=5432;Database=api_bootcamp;Username=postgres;Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__PostgreSQL: "Host=postgres;Port=5432;Database=api_bootcamp;Username=postgres"
       Database__ApplyMigrations: "true"
       Seq__ServerUrl: "http://seq:80"
     ports:
