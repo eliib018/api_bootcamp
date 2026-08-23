@@ -1,0 +1,11 @@
+@ApiBootcamp_HostAddress = http://localhost:5146
+
+POST {{ApiBootcamp_HostAddress}}/api/v1/cuentas
+Content-Type: application/json
+
+{
+  "numeroCuenta": "",
+  "titular": "",
+  "saldo": -100,
+  "estado": 99
+}

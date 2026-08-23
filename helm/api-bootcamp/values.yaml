@@ -1,0 +1,50 @@
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: api-bootcamp
+  tag: latest
+  pullPolicy: IfNotPresent
+
+containerPort: 8080
+
+appName: ApiBootcamp
+aspnetEnvironment: Development
+
+database:
+  applyMigrations: "true"
+
+seq:
+  url: http://seq:80
+
+postgres:
+  host: postgres
+  port: 5432
+  database: api_bootcamp
+  username: postgres
+  password: ""
+
+service:
+  type: NodePort
+  port: 8080
+  targetPort: 8080
+  nodePort: 30080
+
+waitForPostgres:
+  enabled: true
+  image: postgres:18
+
+probes:
+  readiness:
+    path: /health/ready
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+  liveness:
+    path: /health/live
+    initialDelaySeconds: 20
+    periodSeconds: 15
+
+resources: {}
