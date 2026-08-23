@@ -40,9 +40,6 @@ jobs:
       - name: Build
         run: dotnet build api_bootcamp.slnx --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet build api_bootcamp.slnx --configuration Release --no-build --verbosity normal
-
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
