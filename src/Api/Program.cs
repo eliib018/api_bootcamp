@@ -7,6 +7,8 @@ using Serilog;
 using Serilog.Events;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -57,10 +59,19 @@ try
 
     var app = builder.Build();
 
-    if (app.Configuration.GetValue<bool>("Database:ApplyMigrations"))
+        if (app.Configuration.GetValue<bool>("Database:ApplyMigrations"))
     {
         using var scope = app.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var dbContext =
+            scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var historyRepository =
+            dbContext.GetService<IHistoryRepository>();
+
+        await dbContext.Database.ExecuteSqlRawAsync(
+            historyRepository.GetCreateIfNotExistsScript());
+
         await dbContext.Database.MigrateAsync();
     }
 
