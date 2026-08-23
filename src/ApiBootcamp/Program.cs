@@ -109,7 +109,6 @@ try
     {
         app.UseHttpsRedirection();
     }
-    app.UseHttpsRedirection();
 
     if (app.Environment.IsDevelopment())
     {
