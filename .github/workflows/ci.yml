@@ -121,6 +121,15 @@ jobs:
             --namespace api-bootcamp `
             --timeout=120s
 
+      - name: Crear secreto de Seq
+        shell: powershell
+        run: |
+          kubectl create secret generic seq-secret `
+            --namespace api-bootcamp `
+            --from-literal=SEQ_ADMIN_PASSWORD="${{ secrets.SEQ_ADMIN_PASSWORD }}" `
+            --dry-run=client `
+            -o yaml | kubectl apply -f -
+
       - name: Deploy Seq
         shell: powershell
         run: |
