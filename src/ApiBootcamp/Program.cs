@@ -71,7 +71,9 @@ try
 
         options.GetLevel = (httpContext, elapsed, exception) =>
         {
-            if (httpContext.Request.Path.StartsWithSegments("/health"))
+            if (httpContext.Request.Path.StartsWithSegments("/health") ||
+                httpContext.Request.Path.StartsWithSegments("/swagger") ||
+                httpContext.Request.Path == "/favicon.ico")
             {
                 return LogEventLevel.Debug;
             }
