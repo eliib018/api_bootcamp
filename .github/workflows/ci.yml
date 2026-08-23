@@ -93,8 +93,8 @@ jobs:
       - name: Verify Minikube
         shell: powershell
         run: |
-          minikube -p api-bootcamp status
-          kubectl config use-context api-bootcamp
+          minikube -p minikube status
+          kubectl config use-context minikube
           kubectl cluster-info
 
       - name: Create namespace
