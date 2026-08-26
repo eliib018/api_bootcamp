@@ -75,7 +75,7 @@ jobs:
         shell: powershell
         run: |
           kubectl apply -f k8s/postgres-service.yaml
-          kubectl apply -f k8s/postgres-statefulset.yaml
+          kubectl apply -f k8s/statefulset-postgres.yaml
 
           kubectl rollout status statefulset/postgres `
             --namespace ${{ vars.K8S_NAMESPACE }} `
