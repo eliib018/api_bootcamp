@@ -1,0 +1,134 @@
+name: CD ApiBootcamp
+
+on:
+  workflow_run:
+    workflows:
+      - CI ApiBootcamp
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+
+  deploy:
+    name: Desplegar en Minikube
+
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push'
+
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Definir tag de imagen
+        id: meta
+        shell: powershell
+        run: |
+          $sha = "${{ github.event.workflow_run.head_sha }}"
+          $tag = $sha.Substring(0, 7)
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Verificar Minikube
+        shell: powershell
+        run: |
+          minikube -p minikube status
+          kubectl config use-context minikube
+          kubectl cluster-info
+
+      - name: Crear namespace
+        shell: powershell
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+
+      - name: Crear Secret de PostgreSQL
+        shell: powershell
+        run: |
+          kubectl create secret generic postgres-secret `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
+            --from-literal=POSTGRES_DB=api_bootcamp `
+            --from-literal=POSTGRES_USER=postgres `
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" `
+            --dry-run=client `
+            -o yaml | kubectl apply -f -
+
+      - name: Eliminar Deployment antiguo de PostgreSQL
+        shell: powershell
+        run: |
+          kubectl delete deployment postgres `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
+            --ignore-not-found=true
+
+      - name: Desplegar PostgreSQL
+        shell: powershell
+        run: |
+          kubectl apply -f k8s/postgres-service.yaml
+          kubectl apply -f k8s/postgres-statefulset.yaml
+
+          kubectl rollout status statefulset/postgres `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
+            --timeout=120s
+
+      - name: Crear Secret de Seq
+        shell: powershell
+        run: |
+          kubectl create secret generic seq-secret `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
+            --from-literal=SEQ_ADMIN_PASSWORD="${{ secrets.SEQ_ADMIN_PASSWORD }}" `
+            --dry-run=client `
+            -o yaml | kubectl apply -f -
+
+      - name: Desplegar Seq
+        shell: powershell
+        run: |
+          kubectl apply -f k8s/seq-pvc.yaml
+          kubectl apply -f k8s/seq-deployment.yaml
+          kubectl apply -f k8s/seq-service.yaml
+
+          kubectl rollout status deployment/seq `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
+            --timeout=120s
+
+      - name: Desplegar ApiBootcamp con Helm
+        shell: powershell
+        run: |
+          helm upgrade --install api-bootcamp ./chart `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
+            -f ./chart/values-dev.yaml `
+            --set image.repository=docker.io/${{ vars.DOCKERHUB_USERNAME }}/${{ vars.IMAGE_NAME }} `
+            --set image.tag=${{ steps.meta.outputs.tag }} `
+            --set image.pullPolicy=Always `
+            --set-string postgres.password="${{ secrets.POSTGRES_PASSWORD }}" `
+            --wait `
+            --timeout 3m
+
+      - name: Verificar despliegue
+        shell: powershell
+        run: |
+          kubectl rollout status deployment/api-bootcamp `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
+            --timeout=120s
+
+          kubectl get statefulset `
+            --namespace ${{ vars.K8S_NAMESPACE }}
+
+          kubectl get deployments `
+            --namespace ${{ vars.K8S_NAMESPACE }}
+
+          kubectl get pods `
+            --namespace ${{ vars.K8S_NAMESPACE }}
+
+          kubectl get services `
+            --namespace ${{ vars.K8S_NAMESPACE }}

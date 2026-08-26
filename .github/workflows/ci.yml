@@ -1,4 +1,4 @@
-name: CI-CD ApiBootcamp
+name: CI ApiBootcamp
 
 on:
   push:
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-cd-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -53,24 +53,24 @@ jobs:
 
       - name: Validar Helm Dev
         run: |
-          helm lint helm/api-bootcamp \
-            -f helm/api-bootcamp/values-dev.yaml \
+          helm lint chart \
+            -f chart/values-dev.yaml \
             --set-string postgres.password=ci-validation
 
-          helm template api-bootcamp helm/api-bootcamp \
-            -f helm/api-bootcamp/values-dev.yaml \
+          helm template api-bootcamp chart \
+            -f chart/values-dev.yaml \
             --namespace api-bootcamp \
             --set-string postgres.password=ci-validation \
             > /dev/null
 
       - name: Validar Helm QA
         run: |
-          helm lint helm/api-bootcamp \
-            -f helm/api-bootcamp/values-qa.yaml \
+          helm lint chart \
+            -f chart/values-qa.yaml \
             --set-string postgres.password=ci-validation
 
-          helm template api-bootcamp helm/api-bootcamp \
-            -f helm/api-bootcamp/values-qa.yaml \
+          helm template api-bootcamp chart \
+            -f chart/values-qa.yaml \
             --namespace api-bootcamp \
             --set-string postgres.password=ci-validation \
             > /dev/null
@@ -85,9 +85,6 @@ jobs:
       github.event_name != 'pull_request'
 
     runs-on: ubuntu-latest
-
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -119,109 +116,3 @@ jobs:
 
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-
-  deploy:
-    name: Desplegar en Minikube
-    needs: package
-
-    if: >
-      github.ref == 'refs/heads/main' &&
-      github.event_name != 'pull_request'
-
-    runs-on:
-      - self-hosted
-      - Windows
-      - X64
-
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Verificar Minikube
-        shell: powershell
-        run: |
-          minikube -p minikube status
-          kubectl config use-context minikube
-          kubectl cluster-info
-
-      - name: Crear namespace
-        shell: powershell
-        run: |
-          kubectl apply -f k8s/namespace.yaml
-
-      - name: Crear Secret de PostgreSQL
-        shell: powershell
-        run: |
-          kubectl create secret generic postgres-secret `
-            --namespace ${{ vars.K8S_NAMESPACE }} `
-            --from-literal=POSTGRES_DB=api_bootcamp `
-            --from-literal=POSTGRES_USER=postgres `
-            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" `
-            --dry-run=client `
-            -o yaml | kubectl apply -f -
-
-      - name: Eliminar antiguo Deployment de PostgreSQL
-        shell: powershell
-        run: |
-          kubectl delete deployment postgres `
-            --namespace ${{ vars.K8S_NAMESPACE }} `
-            --ignore-not-found=true
-
-      - name: Desplegar PostgreSQL
-        shell: powershell
-        run: |
-          kubectl apply -f k8s/postgres-service.yaml
-          kubectl apply -f k8s/postgres-statefulset.yaml
-
-          kubectl rollout status statefulset/postgres `
-            --namespace ${{ vars.K8S_NAMESPACE }} `
-            --timeout=120s
-
-      - name: Crear Secret de Seq
-        shell: powershell
-        run: |
-          kubectl create secret generic seq-secret `
-            --namespace ${{ vars.K8S_NAMESPACE }} `
-            --from-literal=SEQ_ADMIN_PASSWORD="${{ secrets.SEQ_ADMIN_PASSWORD }}" `
-            --dry-run=client `
-            -o yaml | kubectl apply -f -
-
-      - name: Desplegar Seq
-        shell: powershell
-        run: |
-          kubectl apply -f k8s/seq-pvc.yaml
-          kubectl apply -f k8s/seq-deployment.yaml
-          kubectl apply -f k8s/seq-service.yaml
-
-          kubectl rollout status deployment/seq `
-            --namespace ${{ vars.K8S_NAMESPACE }} `
-            --timeout=120s
-
-      - name: Desplegar ApiBootcamp con Helm
-        shell: powershell
-        run: |
-          helm upgrade --install api-bootcamp ./helm/api-bootcamp `
-            --namespace ${{ vars.K8S_NAMESPACE }} `
-            -f ./helm/api-bootcamp/values-dev.yaml `
-            --set image.repository=docker.io/${{ vars.DOCKERHUB_USERNAME }}/${{ vars.IMAGE_NAME }} `
-            --set image.tag=${{ needs.package.outputs.image_tag }} `
-            --set image.pullPolicy=Always `
-            --set-string postgres.password="${{ secrets.POSTGRES_PASSWORD }}" `
-            --wait `
-            --timeout 3m
-
-      - name: Verificar despliegue
-        shell: powershell
-        run: |
-          kubectl rollout status deployment/api-bootcamp `
-            --namespace ${{ vars.K8S_NAMESPACE }} `
-            --timeout=120s
-
-          kubectl get pods `
-            --namespace ${{ vars.K8S_NAMESPACE }}
-
-          kubectl get services `
-            --namespace ${{ vars.K8S_NAMESPACE }}
