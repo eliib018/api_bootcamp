@@ -24,17 +24,24 @@ try
     {
         var seqServerUrl =
             context.Configuration["Seq:ServerUrl"]
-            ?? "http://localhost:5341";
+            ?? throw new InvalidOperationException(
+            "No se configuró Seq:ServerUrl.");
 
         var applicationName =
             context.Configuration["APPLICATION_NAME"]
-            ?? "ApiBootcamp";
+            ?? throw new InvalidOperationException(
+                "No se configuró APPLICATION_NAME.");
+
+        var podName =
+            context.Configuration["POD_NAME"]
+            ?? Environment.MachineName;
 
         configuration
             .ReadFrom.Configuration(context.Configuration)
             .ReadFrom.Services(services)
             .Enrich.FromLogContext()
             .Enrich.WithProperty("Application", applicationName)
+            .Enrich.WithProperty("PodName", podName)
             .Enrich.WithMachineName()
             .Enrich.WithProcessId()
             .Enrich.WithThreadId()
@@ -75,6 +82,14 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
+    app.Use(async (context, next) =>
+    {
+        context.Response.Headers["X-Request-Id"] =
+            context.TraceIdentifier;
+
+        await next();
+    });
+
     app.UseSerilogRequestLogging(options =>
     {
         options.MessageTemplate =
@@ -106,6 +121,10 @@ try
         options.EnrichDiagnosticContext =
             (diagnosticContext, httpContext) =>
             {
+                diagnosticContext.Set(
+                    "RequestId",
+                    httpContext.TraceIdentifier);
+
                 diagnosticContext.Set(
                     "RequestHost",
                     httpContext.Request.Host.Value);

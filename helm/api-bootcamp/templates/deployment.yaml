@@ -40,6 +40,11 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           envFrom:
             - configMapRef:
                 name: {{ include "api-bootcamp.fullname" . }}-config

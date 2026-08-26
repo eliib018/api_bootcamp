@@ -4,32 +4,31 @@ on:
   push:
     branches:
       - main
+
+  pull_request:
+    branches:
+      - main
+
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-cd-${{ github.ref }}
+  group: ci-cd-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Build, validate and publish
+
+  validation:
+    name: Validar solución
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set image tag
-        id: meta
-        shell: bash
-        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
-      - name: Setup .NET
+      - name: Configurar .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -38,43 +37,97 @@ jobs:
         run: dotnet restore api_bootcamp.slnx
 
       - name: Build
-        run: dotnet build api_bootcamp.slnx --configuration Release --no-restore
+        run: >
+          dotnet build api_bootcamp.slnx
+          --configuration Release
+          --no-restore
 
-      - name: Setup Helm
+      - name: Test
+        run: >
+          dotnet test api_bootcamp.slnx
+          --configuration Release
+          --no-build
+
+      - name: Configurar Helm
         uses: azure/setup-helm@v4
 
-      - name: Validate Helm chart
+      - name: Validar Helm Dev
         run: |
-          helm lint helm/api-bootcamp --set-string postgres.password=ci-validation
+          helm lint helm/api-bootcamp \
+            -f helm/api-bootcamp/values-dev.yaml \
+            --set-string postgres.password=ci-validation
+
           helm template api-bootcamp helm/api-bootcamp \
+            -f helm/api-bootcamp/values-dev.yaml \
             --namespace api-bootcamp \
             --set-string postgres.password=ci-validation \
             > /dev/null
 
-      - name: Login to Docker Hub
+      - name: Validar Helm QA
+        run: |
+          helm lint helm/api-bootcamp \
+            -f helm/api-bootcamp/values-qa.yaml \
+            --set-string postgres.password=ci-validation
+
+          helm template api-bootcamp helm/api-bootcamp \
+            -f helm/api-bootcamp/values-qa.yaml \
+            --namespace api-bootcamp \
+            --set-string postgres.password=ci-validation \
+            > /dev/null
+
+
+  package:
+    name: Construir y publicar imagen
+    needs: validation
+
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
+
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Definir tag de imagen
+        id: meta
+        shell: bash
+        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Login en Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Setup Docker Buildx
+      - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push image
+      - name: Construir y publicar imagen
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
+
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/api-bootcamp:${{ steps.meta.outputs.tag }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/api-bootcamp:latest
+            ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.IMAGE_NAME }}:latest
 
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  cd:
-    name: Deploy to Minikube
-    needs: ci
+
+  deploy:
+    name: Desplegar en Minikube
+    needs: package
+
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
 
     runs-on:
       - self-hosted
@@ -87,50 +140,56 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify Minikube
+      - name: Verificar Minikube
         shell: powershell
         run: |
           minikube -p minikube status
           kubectl config use-context minikube
           kubectl cluster-info
 
-      - name: Create namespace
+      - name: Crear namespace
         shell: powershell
         run: |
           kubectl apply -f k8s/namespace.yaml
 
-      - name: Create PostgreSQL secret
+      - name: Crear Secret de PostgreSQL
         shell: powershell
         run: |
           kubectl create secret generic postgres-secret `
-            --namespace api-bootcamp `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
             --from-literal=POSTGRES_DB=api_bootcamp `
             --from-literal=POSTGRES_USER=postgres `
             --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" `
             --dry-run=client `
             -o yaml | kubectl apply -f -
 
-      - name: Deploy PostgreSQL
+      - name: Eliminar antiguo Deployment de PostgreSQL
         shell: powershell
         run: |
-          kubectl apply -f k8s/postgres-pvc.yaml
-          kubectl apply -f k8s/postgres-deployment.yaml
-          kubectl apply -f k8s/postgres-service.yaml
+          kubectl delete deployment postgres `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
+            --ignore-not-found=true
 
-          kubectl rollout status deployment/postgres `
-            --namespace api-bootcamp `
+      - name: Desplegar PostgreSQL
+        shell: powershell
+        run: |
+          kubectl apply -f k8s/postgres-service.yaml
+          kubectl apply -f k8s/postgres-statefulset.yaml
+
+          kubectl rollout status statefulset/postgres `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
             --timeout=120s
 
-      - name: Crear secreto de Seq
+      - name: Crear Secret de Seq
         shell: powershell
         run: |
           kubectl create secret generic seq-secret `
-            --namespace api-bootcamp `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
             --from-literal=SEQ_ADMIN_PASSWORD="${{ secrets.SEQ_ADMIN_PASSWORD }}" `
             --dry-run=client `
             -o yaml | kubectl apply -f -
 
-      - name: Deploy Seq
+      - name: Desplegar Seq
         shell: powershell
         run: |
           kubectl apply -f k8s/seq-pvc.yaml
@@ -138,30 +197,31 @@ jobs:
           kubectl apply -f k8s/seq-service.yaml
 
           kubectl rollout status deployment/seq `
-            --namespace api-bootcamp `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
             --timeout=120s
 
-      - name: Deploy ApiBootcamp with Helm
+      - name: Desplegar ApiBootcamp con Helm
         shell: powershell
         run: |
           helm upgrade --install api-bootcamp ./helm/api-bootcamp `
-            --namespace api-bootcamp `
-            --set image.repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/api-bootcamp `
-            --set image.tag=${{ needs.ci.outputs.image_tag }} `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
+            -f ./helm/api-bootcamp/values-dev.yaml `
+            --set image.repository=docker.io/${{ vars.DOCKERHUB_USERNAME }}/${{ vars.IMAGE_NAME }} `
+            --set image.tag=${{ needs.package.outputs.image_tag }} `
             --set image.pullPolicy=Always `
             --set-string postgres.password="${{ secrets.POSTGRES_PASSWORD }}" `
             --wait `
             --timeout 3m
 
-      - name: Verify deployment
+      - name: Verificar despliegue
         shell: powershell
         run: |
           kubectl rollout status deployment/api-bootcamp `
-            --namespace api-bootcamp `
+            --namespace ${{ vars.K8S_NAMESPACE }} `
             --timeout=120s
 
           kubectl get pods `
-            --namespace api-bootcamp
+            --namespace ${{ vars.K8S_NAMESPACE }}
 
           kubectl get services `
-            --namespace api-bootcamp
+            --namespace ${{ vars.K8S_NAMESPACE }}
