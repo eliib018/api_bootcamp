@@ -1,59 +1,93 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
+
 metadata:
   name: postgres
   namespace: api-bootcamp
+
 spec:
+  serviceName: postgres
   replicas: 1
-  strategy:
-    type: Recreate
+
   selector:
     matchLabels:
       app: postgres
+
   template:
     metadata:
       labels:
         app: postgres
+
     spec:
       containers:
         - name: postgres
           image: postgres:18
+
           ports:
-            - containerPort: 5432
+            - name: postgres
+              containerPort: 5432
+
           envFrom:
+            - configMapRef:
+                name: api-bootcamp-config
+
             - secretRef:
                 name: postgres-secret
+
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql
+
           startupProbe:
             exec:
               command:
                 - sh
                 - -c
-                - pg_isready -U postgres -d api_bootcamp
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+
             periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 12
+
           readinessProbe:
             exec:
               command:
                 - sh
                 - -c
-                - pg_isready -U postgres -d api_bootcamp
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+
             periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 3
+
           livenessProbe:
             exec:
               command:
                 - sh
                 - -c
-                - pg_isready -U postgres -d api_bootcamp
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
-      volumes:
-        - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: postgres-pvc
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-storage
+
+      spec:
+        accessModes:
+          - ReadWriteOnce
+
+        resources:
+          requests:
+            storage: 1Gi

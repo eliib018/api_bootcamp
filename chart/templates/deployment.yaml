@@ -1,63 +1,99 @@
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
   name: {{ include "api-bootcamp.fullname" . }}
   namespace: {{ .Release.Namespace }}
+
   labels:
     {{- include "api-bootcamp.labels" . | nindent 4 }}
+
 spec:
   replicas: {{ .Values.replicaCount }}
+
   selector:
     matchLabels:
       {{- include "api-bootcamp.selectorLabels" . | nindent 6 }}
+
   template:
     metadata:
       labels:
         {{- include "api-bootcamp.selectorLabels" . | nindent 8 }}
+
     spec:
+
       {{- if .Values.waitForPostgres.enabled }}
+
       initContainers:
         - name: wait-for-postgres
+
           image: {{ .Values.waitForPostgres.image }}
+
+          envFrom:
+            - configMapRef:
+                name: {{ include "api-bootcamp.fullname" . }}-config
+
           command:
             - sh
             - -c
             - >
               until pg_isready
-              -h {{ .Values.postgres.host }}
-              -p {{ .Values.postgres.port }}
-              -U {{ .Values.postgres.username }}
-              -d {{ .Values.postgres.database }};
+              -h "$POSTGRES_HOST"
+              -p "$POSTGRES_PORT"
+              -U "$POSTGRES_USER"
+              -d "$POSTGRES_DB";
               do
                 echo "Esperando PostgreSQL...";
                 sleep 2;
               done
+
       {{- end }}
+
       containers:
+
         - name: {{ .Chart.Name }}
+
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
+
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
           envFrom:
+
             - configMapRef:
                 name: {{ include "api-bootcamp.fullname" . }}-config
+
             - secretRef:
-                name: {{ include "api-bootcamp.fullname" . }}-secret
+                name: postgres-secret
+
           readinessProbe:
             httpGet:
               path: {{ .Values.probes.readiness.path }}
               port: http
+
             initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}
               port: http
+
             initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+
           {{- with .Values.resources }}
+
           resources:
             {{- toYaml . | nindent 12 }}
+
           {{- end }}

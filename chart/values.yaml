@@ -1,4 +1,4 @@
-replicaCount: 1
+replicaCount: 2
 
 nameOverride: ""
 fullnameOverride: ""
@@ -13,11 +13,15 @@ containerPort: 8080
 appName: ApiBootcamp
 aspnetEnvironment: Development
 
+logging:
+  minimumLevel: Information
+
 database:
   applyMigrations: "true"
 
 seq:
   url: http://seq:80
+  adminPassword: ""
 
 postgres:
   host: postgres
@@ -47,4 +51,11 @@ probes:
     initialDelaySeconds: 20
     periodSeconds: 15
 
-resources: {}
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+  limits:
+    cpu: 500m
+    memory: 256Mi

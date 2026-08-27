@@ -1,35 +1,33 @@
-name: CI-CD ApiBootcamp
+name: CI ApiBootcamp
 
 on:
   push:
     branches:
       - main
+
+  pull_request:
+    branches:
+      - main
+
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-cd-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Build, validate and publish
+  validation:
+    name: Validar solución
     runs-on: ubuntu-latest
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set image tag
-        id: meta
-        shell: bash
-        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
-      - name: Setup .NET
+      - name: Configurar .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -38,130 +36,85 @@ jobs:
         run: dotnet restore api_bootcamp.slnx
 
       - name: Build
-        run: dotnet build api_bootcamp.slnx --configuration Release --no-restore
+        run: >
+          dotnet build api_bootcamp.slnx
+          --configuration Release
+          --no-restore
 
-      - name: Setup Helm
+      - name: Test
+        run: >
+          dotnet test api_bootcamp.slnx
+          --configuration Release
+          --no-build
+
+      - name: Configurar Helm
         uses: azure/setup-helm@v4
 
-      - name: Validate Helm chart
+      - name: Validar Helm Dev
         run: |
-          helm lint helm/api-bootcamp --set-string postgres.password=ci-validation
-          helm template api-bootcamp helm/api-bootcamp \
+          helm lint chart \
+            -f chart/values-dev.yaml \
+            --set-string postgres.password=ci-validation \
+            --set-string seq.adminPassword=ci-validation
+
+          helm template api-bootcamp chart \
+            -f chart/values-dev.yaml \
             --namespace api-bootcamp \
             --set-string postgres.password=ci-validation \
+            --set-string seq.adminPassword=ci-validation \
             > /dev/null
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Validar Helm QA
+        run: |
+          helm lint chart \
+            -f chart/values-qa.yaml \
+            --set-string postgres.password=ci-validation \
+            --set-string seq.adminPassword=ci-validation
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+          helm template api-bootcamp chart \
+            -f chart/values-qa.yaml \
+            --namespace api-bootcamp \
+            --set-string postgres.password=ci-validation \
+            --set-string seq.adminPassword=ci-validation \
+            > /dev/null
 
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/api-bootcamp:${{ steps.meta.outputs.tag }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/api-bootcamp:latest
+  package:
+    name: Construir y publicar imagen
+    needs: validation
 
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
 
-  cd:
-    name: Deploy to Minikube
-    needs: ci
-
-    runs-on:
-      - self-hosted
-      - Windows
-      - X64
-
-    timeout-minutes: 15
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify Minikube
-        shell: powershell
-        run: |
-          minikube -p minikube status
-          kubectl config use-context minikube
-          kubectl cluster-info
+      - name: Definir tag de imagen
+        id: meta
+        shell: bash
+        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Create namespace
-        shell: powershell
-        run: |
-          kubectl apply -f k8s/namespace.yaml
+      - name: Login en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Create PostgreSQL secret
-        shell: powershell
-        run: |
-          kubectl create secret generic postgres-secret `
-            --namespace api-bootcamp `
-            --from-literal=POSTGRES_DB=api_bootcamp `
-            --from-literal=POSTGRES_USER=postgres `
-            --from-literal=POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" `
-            --dry-run=client `
-            -o yaml | kubectl apply -f -
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Deploy PostgreSQL
-        shell: powershell
-        run: |
-          kubectl apply -f k8s/postgres-pvc.yaml
-          kubectl apply -f k8s/postgres-deployment.yaml
-          kubectl apply -f k8s/postgres-service.yaml
+      - name: Construir y publicar imagen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
 
-          kubectl rollout status deployment/postgres `
-            --namespace api-bootcamp `
-            --timeout=120s
+          tags: |
+            ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.IMAGE_NAME }}:latest
 
-      - name: Crear secreto de Seq
-        shell: powershell
-        run: |
-          kubectl create secret generic seq-secret `
-            --namespace api-bootcamp `
-            --from-literal=SEQ_ADMIN_PASSWORD="${{ secrets.SEQ_ADMIN_PASSWORD }}" `
-            --dry-run=client `
-            -o yaml | kubectl apply -f -
-
-      - name: Deploy Seq
-        shell: powershell
-        run: |
-          kubectl apply -f k8s/seq-pvc.yaml
-          kubectl apply -f k8s/seq-deployment.yaml
-          kubectl apply -f k8s/seq-service.yaml
-
-          kubectl rollout status deployment/seq `
-            --namespace api-bootcamp `
-            --timeout=120s
-
-      - name: Deploy ApiBootcamp with Helm
-        shell: powershell
-        run: |
-          helm upgrade --install api-bootcamp ./helm/api-bootcamp `
-            --namespace api-bootcamp `
-            --set image.repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/api-bootcamp `
-            --set image.tag=${{ needs.ci.outputs.image_tag }} `
-            --set image.pullPolicy=Always `
-            --set-string postgres.password="${{ secrets.POSTGRES_PASSWORD }}" `
-            --wait `
-            --timeout 3m
-
-      - name: Verify deployment
-        shell: powershell
-        run: |
-          kubectl rollout status deployment/api-bootcamp `
-            --namespace api-bootcamp `
-            --timeout=120s
-
-          kubectl get pods `
-            --namespace api-bootcamp
-
-          kubectl get services `
-            --namespace api-bootcamp
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

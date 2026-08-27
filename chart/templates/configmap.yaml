@@ -10,5 +10,14 @@ data:
   APPLICATION_NAME: {{ .Values.appName | quote }}
   ASPNETCORE_ENVIRONMENT: {{ .Values.aspnetEnvironment | quote }}
   ASPNETCORE_HTTP_PORTS: {{ .Values.containerPort | quote }}
+
   Seq__ServerUrl: {{ .Values.seq.url | quote }}
+
   Database__ApplyMigrations: {{ .Values.database.applyMigrations | quote }}
+
+  Serilog__MinimumLevel__Default: {{ .Values.logging.minimumLevel | quote }}
+
+  POSTGRES_HOST: {{ .Values.postgres.host | quote }}
+  POSTGRES_PORT: {{ .Values.postgres.port | quote }}
+  POSTGRES_DB: {{ .Values.postgres.database | quote }}
+  POSTGRES_USER: {{ .Values.postgres.username | quote }}
