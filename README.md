@@ -423,7 +423,6 @@ DESIRED   CURRENT   READY
 
 Esto demuestra la **autorecuperación**: al eliminar manualmente un Pod, Kubernetes crea otro hasta recuperar las 2 réplicas declaradas.
 
-![01](01-autorecuperacion-pod-1.png)
 ![Autorecuperación del Pod](docs/capturas/01-autorecuperacion-pod.png)
 
 ## 2. Escalado declarativo
@@ -453,7 +452,7 @@ READY   UP-TO-DATE   AVAILABLE
 ```
 
 y tres Pods de la API ejecutándose simultáneamente.
-![02](02-escalado-3-replicas.png)
+
 ![Escalado a tres réplicas](docs/capturas/02-escalado-3-replicas.png)
 
 Para regresar a 2 réplicas:
@@ -481,7 +480,7 @@ Application = 'ApiBootcamp'
 ```
 
 La captura muestra múltiples solicitudes `GET /api/v1/cuentas` procesadas correctamente con código HTTP `200`.
-![03](03-seq-eventos-api.png)
+
 ![Eventos de ApiBootcamp en Seq](docs/capturas/03-seq-eventos-api.png)
 
 Los eventos incluyen propiedades estructuradas como:
@@ -504,7 +503,7 @@ PodName = 'api-bootcamp-74c65cf9bf-vmr4n'
 ```
 
 En el evento se observan, entre otras propiedades, `Application = ApiBootcamp`, `RequestPath = /api/v1/cuentas`, `StatusCode = 200`, `RequestId` y el `PodName` correspondiente.
-![04](04-seq-replica-1.png)
+
 ![Eventos de la primera réplica](docs/capturas/04-seq-replica-1.png)
 
 Segunda réplica:
@@ -514,7 +513,7 @@ PodName = 'api-bootcamp-74c65cf9bf-2gb9w'
 ```
 
 La segunda captura muestra los mismos campos estructurados, pero con un `PodName` distinto.
-![05](05-seq-replica-2.png)
+
 ![Eventos de la segunda réplica](docs/capturas/05-seq-replica-2.png)
 
 Esto demuestra que Seq recibe eventos generados por diferentes réplicas de la API y permite buscarlos por propiedades. `RequestId` permite correlacionar los eventos asociados a una solicitud y `PodName` identifica qué réplica la procesó.
@@ -530,7 +529,7 @@ Para verificar el comportamiento del pipeline se provocó intencionalmente una f
 La ejecución de CI llegó al paso `Test`, encontró una prueba fallida y terminó con código de salida `1`.
 
 La captura muestra `Failed: 1`, por lo que el pipeline quedó en estado rojo y los pasos posteriores no continuaron.
-![06](06-actions-pr-rojo-1.png)
+
 ![Pipeline con fallo intencional](docs/capturas/06-actions-pr-rojo.png)
 
 Después se corrigió la prueba y se volvió a ejecutar CI.
@@ -545,7 +544,7 @@ Passed: 4
 ```
 
 También se completaron correctamente las validaciones de Helm para DEV y QA.
-![07](07-actions-pr-verde-1.png)
+
 ![Pipeline corregido](docs/capturas/07-actions-pr-verde.png)
 
 Flujo demostrado:
