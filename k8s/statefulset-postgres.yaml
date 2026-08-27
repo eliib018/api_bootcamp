@@ -1,84 +1,99 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
+
 metadata:
-  name: postgres
-  namespace: api-bootcamp
+  name: {{ include "api-bootcamp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+
+  labels:
+    {{- include "api-bootcamp.labels" . | nindent 4 }}
 
 spec:
-  serviceName: postgres
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
 
   selector:
     matchLabels:
-      app: postgres
+      {{- include "api-bootcamp.selectorLabels" . | nindent 6 }}
 
   template:
     metadata:
       labels:
-        app: postgres
+        {{- include "api-bootcamp.selectorLabels" . | nindent 8 }}
 
     spec:
-      containers:
-        - name: postgres
-          image: postgres:18
 
-          ports:
-            - name: postgres
-              containerPort: 5432
+      {{- if .Values.waitForPostgres.enabled }}
+
+      initContainers:
+        - name: wait-for-postgres
+
+          image: {{ .Values.waitForPostgres.image }}
 
           envFrom:
+            - configMapRef:
+                name: {{ include "api-bootcamp.fullname" . }}-config
+
+          command:
+            - sh
+            - -c
+            - >
+              until pg_isready
+              -h "$POSTGRES_HOST"
+              -p "$POSTGRES_PORT"
+              -U "$POSTGRES_USER"
+              -d "$POSTGRES_DB";
+              do
+                echo "Esperando PostgreSQL...";
+                sleep 2;
+              done
+
+      {{- end }}
+
+      containers:
+
+        - name: {{ .Chart.Name }}
+
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+          envFrom:
+
+            - configMapRef:
+                name: {{ include "api-bootcamp.fullname" . }}-config
+
             - secretRef:
                 name: postgres-secret
 
-          volumeMounts:
-            - name: postgres-storage
-              mountPath: /var/lib/postgresql
-
-          startupProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - pg_isready -U postgres -d api_bootcamp
-            periodSeconds: 5
-            timeoutSeconds: 5
-            failureThreshold: 12
-
           readinessProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - pg_isready -U postgres -d api_bootcamp
-            periodSeconds: 5
-            timeoutSeconds: 5
-            failureThreshold: 3
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
 
           livenessProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - pg_isready -U postgres -d api_bootcamp
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+
+          {{- with .Values.resources }}
 
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+            {{- toYaml . | nindent 12 }}
 
-  volumeClaimTemplates:
-    - metadata:
-        name: postgres-storage
-      spec:
-        accessModes:
-          - ReadWriteOnce
-
-        resources:
-          requests:
-            storage: 1Gi
+          {{- end }}
