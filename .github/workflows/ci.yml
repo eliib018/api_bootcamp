@@ -19,7 +19,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
   validation:
     name: Validar solución
     runs-on: ubuntu-latest
@@ -55,26 +54,29 @@ jobs:
         run: |
           helm lint chart \
             -f chart/values-dev.yaml \
-            --set-string postgres.password=ci-validation
+            --set-string postgres.password=ci-validation \
+            --set-string seq.adminPassword=ci-validation
 
           helm template api-bootcamp chart \
             -f chart/values-dev.yaml \
             --namespace api-bootcamp \
             --set-string postgres.password=ci-validation \
+            --set-string seq.adminPassword=ci-validation \
             > /dev/null
 
       - name: Validar Helm QA
         run: |
           helm lint chart \
             -f chart/values-qa.yaml \
-            --set-string postgres.password=ci-validation
+            --set-string postgres.password=ci-validation \
+            --set-string seq.adminPassword=ci-validation
 
           helm template api-bootcamp chart \
             -f chart/values-qa.yaml \
             --namespace api-bootcamp \
             --set-string postgres.password=ci-validation \
+            --set-string seq.adminPassword=ci-validation \
             > /dev/null
-
 
   package:
     name: Construir y publicar imagen

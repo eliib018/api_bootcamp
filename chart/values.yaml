@@ -21,6 +21,7 @@ database:
 
 seq:
   url: http://seq:80
+  adminPassword: ""
 
 postgres:
   host: postgres
